@@ -27,6 +27,7 @@ jobs:
       - name: 자동 구매 스크립트 실행
         env:
           PLAYER_ID: ${{ secrets.PLAYER_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python claim_free.py
 
       - name: 실행 결과 스크린샷 저장
