@@ -8,6 +8,7 @@ def run():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 800})
+        modal = page.locator(".user-id-modal")
 
         try:
             # 1. 웹 상점 사이트로 이동
@@ -19,7 +20,6 @@ def run():
                 dismiss_btn.click()
 
             # 3. 화면에 실제로 보이는 'Log in' 버튼 클릭
-            modal = page.locator(".user-id-modal")
             if not modal.is_visible():
                 page.locator("button:has-text('Log in'):visible").first.click()
                 page.wait_for_timeout(1000)
@@ -50,8 +50,13 @@ def run():
                 page.wait_for_timeout(2000)
 
         finally:
-            # 오류가 나든 성공하든 마지막 화면을 무조건 스크린샷으로 저장
-            page.screenshot(path="result.png", full_page=True)
+            # 팝업이 남아 있다면 팝업 안의 글자를 로그에 출력
+            if modal.is_visible():
+                print("=== 팝업 내용 ===")
+                print(modal.inner_text())
+                print("=================")
+            # 현재 보이는 화면만 선명하게 스크린샷 저장
+            page.screenshot(path="result.png", full_page=False)
             browser.close()
 
 if __name__ == "__main__":
