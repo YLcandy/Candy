@@ -1,7 +1,7 @@
 import os
 from playwright.sync_api import sync_playwright
 
-PLAYER_ID = os.environ["PLAYER_ID"]
+PLAYER_ID = os.environ["PLAYER_ID"].strip()
 STORE_URL = "https://store.eternalhero.rivvy.games/"
 
 def run():
@@ -24,13 +24,18 @@ def run():
                 page.locator("button:has-text('Log in'):visible").first.click()
                 page.wait_for_timeout(1000)
 
-            # 4. 첫 번째 버튼으로 팝업이 안 열렸다면 마지막 'Log in' 버튼 클릭
             if not modal.is_visible():
                 page.locator("button:has-text('Log in'):visible").last.click()
 
-            # 5. 로그인 팝업(.user-id-modal) 안의 입력창에 Player ID 입력 후 로그인
+            # 4. 로그인 팝업(.user-id-modal) 안의 입력창을 클릭한 뒤 한 글자씩 타이핑
             modal.wait_for(state="visible", timeout=10000)
-            modal.locator("input:visible").first.fill(PLAYER_ID)
+            inp = modal.locator("input:visible").first
+            inp.click()
+            inp.press_sequentially(PLAYER_ID, delay=50)
+            print("입력된 ID 글자 수:", len(inp.input_value()))
+            page.wait_for_timeout(500)
+
+            # 5. 팝업 안의 'Log in' 버튼 클릭
             modal.locator("button:has-text('Log in'):visible").first.click()
 
             # 6. 로그인 팝업이 닫힐 때까지 대기
@@ -50,12 +55,10 @@ def run():
                 page.wait_for_timeout(2000)
 
         finally:
-            # 팝업이 남아 있다면 팝업 안의 글자를 로그에 출력
             if modal.is_visible():
                 print("=== 팝업 내용 ===")
                 print(modal.inner_text())
                 print("=================")
-            # 현재 보이는 화면만 선명하게 스크린샷 저장
             page.screenshot(path="result.png", full_page=False)
             browser.close()
 
