@@ -12,7 +12,6 @@ def run():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 800})
-        modal = page.locator(".user-id-modal")
 
         try:
             # 1. 웹 상점 사이트로 이동
@@ -35,25 +34,30 @@ def run():
             # 4. 입력창과 한 세트인 'Log in' 버튼 클릭
             login_box = inp.locator("xpath=ancestor::*[.//button[contains(., 'Log in')]][1]")
             login_box.get_by_role("button", name="Log in").click()
-            page.wait_for_timeout(4000)
 
-            print("로그인 박스 내용:", login_box.inner_text().replace("\n", " | "))
+            # 5. 로그인 입력창이 사라질 때까지 대기 (로그인 성공 확인)
+            inp.wait_for(state="hidden", timeout=15000)
+            print("로그인 성공!")
+            page.wait_for_timeout(2000)
 
-            # 5. 무료 아이템 클릭
+            # 6. 무료 아이템(echo_shard_pack_free) 상태 확인 및 클릭
             free_btn = page.locator('[data-sku="echo_shard_pack_free"]').first
             free_btn.scroll_into_view_if_needed()
-            free_btn.click()
-            page.wait_for_timeout(3000)
+            print("무료 버튼 문구:", free_btn.inner_text(), "| 클릭 가능 여부:", free_btn.is_enabled())
 
-            # 6. 장바구니 클릭
-            cart_btn = page.locator("button:has-text('Cart'):visible").first
+            if free_btn.is_enabled():
+                free_btn.click()
+                page.wait_for_timeout(3000)
+            else:
+                print("오늘 무료 아이템을 이미 수령했거나 버튼이 비활성화 상태입니다.")
+
+            # 7. 장바구니 버튼 클릭해 보기
+            cart_btn = page.locator('[data-testid="header-cart-button"]').first
             if cart_btn.is_visible():
                 cart_btn.click()
                 page.wait_for_timeout(2000)
 
         finally:
-            if modal.is_visible():
-                print("팝업 내용:", modal.inner_text().replace("\n", " | "))
             page.screenshot(path="result.png", full_page=False)
             browser.close()
 
