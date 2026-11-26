@@ -55,6 +55,7 @@ def claim_for_player(browser, idx, player_id, memo):
     page = context.new_page()
     screenshot_path = f"result_{idx}.png"
     logs = []
+    has_error = False
 
     try:
         # 1. 웹 상점 사이트로 이동
@@ -117,6 +118,7 @@ def claim_for_player(browser, idx, player_id, memo):
                 logs.append(f"⏭️ `{sku}` 이미 수령됨 ({btn.inner_text()})")
 
     except Exception as e:
+        has_error = True
         logs.append(f"❌ 오류 발생: {e}")
 
     finally:
@@ -126,18 +128,27 @@ def claim_for_player(browser, idx, player_id, memo):
         print(summary)
         send_discord(summary, screenshot_path)
 
+    return has_error
+
 def run():
     players = load_players()
     if not players:
         raise ValueError("players.txt와 PLAYER_ID Secret이 모두 비어 있습니다!")
 
     print(f"총 {len(players)}개의 계정을 처리합니다.")
+    error_count = 0
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         for idx, (pid, memo) in enumerate(players, start=1):
-            claim_for_player(browser, idx, pid, memo)
+            if claim_for_player(browser, idx, pid, memo):
+                error_count += 1
         browser.close()
+
+    # 모든 계정 처리가 끝난 후 최종 완료 알림 전송
+    final_msg = f"🎉 **모든 계정의 무료 아이템 수령이 끝났습니다!** (총 {len(players)}개 계정 처리 · 오류 {error_count}건)"
+    print(final_msg)
+    send_discord(final_msg)
 
 if __name__ == "__main__":
     run()
