@@ -1,30 +1,60 @@
 import os
+import requests
 from playwright.sync_api import sync_playwright
 
 STORE_URL = "https://store.eternalhero.rivvy.games/"
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
-def load_player_ids():
-    ids = []
-    # 1. players.txt 파일이 있으면 한 줄씩 읽어옵니다.
+def send_discord(message, image_path=None):
+    if not DISCORD_WEBHOOK_URL:
+        print("DISCORD_WEBHOOK_URL이 설정되지 않아 디스코드 알림을 건너뜁니다.")
+        return
+    try:
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as img:
+                requests.post(
+                    DISCORD_WEBHOOK_URL,
+                    data={"content": message},
+                    files={"file": (os.path.basename(image_path), img, "image/png")},
+                    timeout=15,
+                )
+        else:
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": message}, timeout=15)
+    except Exception as e:
+        print("디스코드 전송 실패:", e)
+
+def load_players():
+    players = []
     if os.path.exists("players.txt"):
         with open("players.txt", "r", encoding="utf-8") as f:
             for line in f:
-                # '#' 뒤의 메모를 제거하고 앞뒤 공백을 정리합니다.
-                pid = line.split("#", 1)[0].strip()
+                raw = line.strip()
+                if not raw or raw.startswith("#"):
+                    continue
+                if "#" in raw:
+                    pid, memo = raw.split("#", 1)
+                    pid = pid.strip()
+                    memo = memo.strip()
+                else:
+                    pid, memo = raw, ""
                 if pid:
-                    ids.append(pid)
+                    players.append((pid, memo))
 
-    # 2. players.txt가 비어 있으면 기존 Secrets(PLAYER_ID)에서 가져옵니다.
-    if not ids:
+    if not players:
         raw_ids = os.environ.get("PLAYER_ID", "")
-        ids = [x.strip() for x in raw_ids.replace(",", "\n").splitlines() if x.strip()]
+        for pid in raw_ids.replace(",", "\n").splitlines():
+            if pid.strip():
+                players.append((pid.strip(), ""))
 
-    return ids
+    return players
 
-def claim_for_player(browser, idx, player_id):
-    print(f"\n--- [{idx}번 계정] 수령 시작 ---")
+def claim_for_player(browser, idx, player_id, memo):
+    label = f"{idx}번 계정 ({memo})" if memo else f"{idx}번 계정"
+    print(f"\n--- [{label}] 수령 시작 ---")
     context = browser.new_context(viewport={"width": 1280, "height": 800})
     page = context.new_page()
+    screenshot_path = f"result_{idx}.png"
+    logs = []
 
     try:
         # 1. 웹 상점 사이트로 이동
@@ -49,13 +79,12 @@ def claim_for_player(browser, idx, player_id):
 
         # 5. 로그인 완료 대기
         inp.wait_for(state="hidden", timeout=15000)
-        print(f"[{idx}번 계정] 로그인 성공!")
+        print(f"[{label}] 로그인 성공!")
         page.wait_for_timeout(2000)
 
-        # 6. 페이지에 있는 '모든' 무료 아이템 버튼 찾기
+        # 6. 페이지에 있는 모든 무료 아이템 버튼 찾기
         free_buttons = page.locator('[data-testid="free-button"]')
         total = free_buttons.count()
-        print(f"[{idx}번 계정] 발견된 무료 아이템 개수: {total}개")
 
         skus = []
         for i in range(total):
@@ -63,47 +92,51 @@ def claim_for_player(browser, idx, player_id):
             if sku:
                 skus.append(sku)
 
+        if not skus:
+            logs.append("무료 아이템을 찾지 못했습니다.")
+
         # 7. 찾은 무료 아이템을 하나씩 순서대로 수령
         for sku in skus:
             btn = page.locator(f'[data-testid="free-button"][data-sku="{sku}"]').first
             btn.scroll_into_view_if_needed()
 
             if btn.is_visible() and btn.is_enabled():
-                print(f"[{idx}번 계정] '{sku}' 수령 시도...")
                 btn.click()
-
                 claimed_modal = page.locator('[data-testid="claimed-item-modal"]')
                 try:
                     claimed_modal.wait_for(state="visible", timeout=10000)
-                    print(f"[{idx}번 계정] '{sku}' 수령 완료!")
+                    logs.append(f"✅ `{sku}` 수령 완료!")
                     back_btn = claimed_modal.get_by_role("button", name="Back to store")
                     if back_btn.is_visible():
                         back_btn.click()
                         claimed_modal.wait_for(state="hidden", timeout=10000)
                     page.wait_for_timeout(1000)
-                except Exception as modal_err:
-                    print(f"[{idx}번 계정] '{sku}' 완료 팝업 대기 중 참고사항: {modal_err}")
+                except Exception:
+                    logs.append(f"⚠️ `{sku}` 클릭 후 완료 팝업 확인 필요")
             else:
-                print(f"[{idx}번 계정] '{sku}' 이미 수령됨 (상태: {btn.inner_text()})")
+                logs.append(f"⏭️ `{sku}` 이미 수령됨 ({btn.inner_text()})")
 
     except Exception as e:
-        print(f"[{idx}번 계정] 오류 발생: {e}")
+        logs.append(f"❌ 오류 발생: {e}")
 
     finally:
-        page.screenshot(path=f"result_{idx}.png", full_page=False)
+        page.screenshot(path=screenshot_path, full_page=False)
         context.close()
+        summary = f"**[{label}]**\n" + "\n".join(logs)
+        print(summary)
+        send_discord(summary, screenshot_path)
 
 def run():
-    player_ids = load_player_ids()
-    if not player_ids:
+    players = load_players()
+    if not players:
         raise ValueError("players.txt와 PLAYER_ID Secret이 모두 비어 있습니다!")
 
-    print(f"총 {len(player_ids)}개의 계정을 처리합니다.")
+    print(f"총 {len(players)}개의 계정을 처리합니다.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for idx, pid in enumerate(player_ids, start=1):
-            claim_for_player(browser, idx, pid)
+        for idx, (pid, memo) in enumerate(players, start=1):
+            claim_for_player(browser, idx, pid, memo)
         browser.close()
 
 if __name__ == "__main__":
