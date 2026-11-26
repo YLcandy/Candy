@@ -34,4 +34,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: claim-result
-          path: result.png
+          path: result*.png
