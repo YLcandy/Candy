@@ -8,7 +8,6 @@ STORE_URL = "https://store.eternalhero.rivvy.games/"
 
 def claim_for_player(browser, idx, player_id):
     print(f"\n--- [{idx}번 계정] 수령 시작 ---")
-    # 계정마다 새 시크릿 창(context)을 열어 이전 계정의 로그인이 남지 않게 합니다.
     context = browser.new_context(viewport={"width": 1280, "height": 800})
     page = context.new_page()
 
@@ -38,18 +37,41 @@ def claim_for_player(browser, idx, player_id):
         print(f"[{idx}번 계정] 로그인 성공!")
         page.wait_for_timeout(2000)
 
-        # 6. 무료 아이템(echo_shard_pack_free) 상태 확인 및 수령
-        free_btn = page.locator('[data-sku="echo_shard_pack_free"]').first
-        free_btn.scroll_into_view_if_needed()
+        # 6. 페이지에 있는 '모든' 무료 아이템 버튼 찾기
+        free_buttons = page.locator('[data-testid="free-button"]')
+        total = free_buttons.count()
+        print(f"[{idx}번 계정] 발견된 무료 아이템 개수: {total}개")
 
-        if free_btn.is_enabled():
-            free_btn.click()
-            claimed_modal = page.locator('[data-testid="claimed-item-modal"]')
-            claimed_modal.wait_for(state="visible", timeout=15000)
-            print(f"[{idx}번 계정] 무료 아이템 수령 완료!")
-            page.wait_for_timeout(1000)
-        else:
-            print(f"[{idx}번 계정] 이미 오늘 무료 아이템을 수령했습니다. (상태: {free_btn.inner_text()})")
+        # 각 버튼의 고유 이름(data-sku)을 미리 모아둡니다.
+        skus = []
+        for i in range(total):
+            sku = free_buttons.nth(i).get_attribute("data-sku")
+            if sku:
+                skus.append(sku)
+
+        # 7. 찾은 무료 아이템을 하나씩 순서대로 수령
+        for sku in skus:
+            btn = page.locator(f'[data-testid="free-button"][data-sku="{sku}"]').first
+            btn.scroll_into_view_if_needed()
+
+            if btn.is_visible() and btn.is_enabled():
+                print(f"[{idx}번 계정] '{sku}' 수령 시도...")
+                btn.click()
+
+                # 'You got:' 완료 팝업이 뜨면 확인 후 'Back to store' 눌러 닫기
+                claimed_modal = page.locator('[data-testid="claimed-item-modal"]')
+                try:
+                    claimed_modal.wait_for(state="visible", timeout=10000)
+                    print(f"[{idx}번 계정] '{sku}' 수령 완료!")
+                    back_btn = claimed_modal.get_by_role("button", name="Back to store")
+                    if back_btn.is_visible():
+                        back_btn.click()
+                        claimed_modal.wait_for(state="hidden", timeout=10000)
+                    page.wait_for_timeout(1000)
+                except Exception as modal_err:
+                    print(f"[{idx}번 계정] '{sku}' 완료 팝업 대기 중 참고사항: {modal_err}")
+            else:
+                print(f"[{idx}번 계정] '{sku}' 이미 수령됨 (상태: {btn.inner_text()})")
 
     except Exception as e:
         print(f"[{idx}번 계정] 오류 발생: {e}")
