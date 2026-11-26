@@ -1,10 +1,25 @@
 import os
 from playwright.sync_api import sync_playwright
 
-RAW_IDS = os.environ.get("PLAYER_ID", "")
-# 쉼표(,) 또는 줄바꿈으로 구분된 여러 아이디를 목록으로 만듭니다.
-PLAYER_IDS = [x.strip() for x in RAW_IDS.replace(",", "\n").splitlines() if x.strip()]
 STORE_URL = "https://store.eternalhero.rivvy.games/"
+
+def load_player_ids():
+    ids = []
+    # 1. players.txt 파일이 있으면 한 줄씩 읽어옵니다.
+    if os.path.exists("players.txt"):
+        with open("players.txt", "r", encoding="utf-8") as f:
+            for line in f:
+                # '#' 뒤의 메모를 제거하고 앞뒤 공백을 정리합니다.
+                pid = line.split("#", 1)[0].strip()
+                if pid:
+                    ids.append(pid)
+
+    # 2. players.txt가 비어 있으면 기존 Secrets(PLAYER_ID)에서 가져옵니다.
+    if not ids:
+        raw_ids = os.environ.get("PLAYER_ID", "")
+        ids = [x.strip() for x in raw_ids.replace(",", "\n").splitlines() if x.strip()]
+
+    return ids
 
 def claim_for_player(browser, idx, player_id):
     print(f"\n--- [{idx}번 계정] 수령 시작 ---")
@@ -42,7 +57,6 @@ def claim_for_player(browser, idx, player_id):
         total = free_buttons.count()
         print(f"[{idx}번 계정] 발견된 무료 아이템 개수: {total}개")
 
-        # 각 버튼의 고유 이름(data-sku)을 미리 모아둡니다.
         skus = []
         for i in range(total):
             sku = free_buttons.nth(i).get_attribute("data-sku")
@@ -58,7 +72,6 @@ def claim_for_player(browser, idx, player_id):
                 print(f"[{idx}번 계정] '{sku}' 수령 시도...")
                 btn.click()
 
-                # 'You got:' 완료 팝업이 뜨면 확인 후 'Back to store' 눌러 닫기
                 claimed_modal = page.locator('[data-testid="claimed-item-modal"]')
                 try:
                     claimed_modal.wait_for(state="visible", timeout=10000)
@@ -81,14 +94,15 @@ def claim_for_player(browser, idx, player_id):
         context.close()
 
 def run():
-    if not PLAYER_IDS:
-        raise ValueError("PLAYER_ID가 비어 있습니다! Repository secrets에 PLAYER_ID를 등록해 주세요.")
+    player_ids = load_player_ids()
+    if not player_ids:
+        raise ValueError("players.txt와 PLAYER_ID Secret이 모두 비어 있습니다!")
 
-    print(f"총 {len(PLAYER_IDS)}개의 계정을 처리합니다.")
+    print(f"총 {len(player_ids)}개의 계정을 처리합니다.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for idx, pid in enumerate(PLAYER_IDS, start=1):
+        for idx, pid in enumerate(player_ids, start=1):
             claim_for_player(browser, idx, pid)
         browser.close()
 
