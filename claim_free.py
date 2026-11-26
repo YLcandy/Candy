@@ -1,45 +1,52 @@
 import os
 from playwright.sync_api import sync_playwright
 
-# GitHub Secrets에 저장한 PLAYER_ID를 불러옵니다.
 PLAYER_ID = os.environ["PLAYER_ID"]
 STORE_URL = "https://store.eternalhero.rivvy.games/"
 
 def run():
     with sync_playwright() as p:
-        # 1. 크롬 브라우저를 화면 없이(headless) 실행합니다.
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # 2. 웹 상점 사이트로 이동합니다.
-        page.goto(STORE_URL, wait_until="networkidle")
+        try:
+            # 1. 웹 상점 사이트로 이동
+            page.goto(STORE_URL, wait_until="networkidle")
 
-        # 3. 쿠키 안내 팝업이 뜨면 닫기(Dismiss) 버튼을 누릅니다.
-        dismiss_btn = page.get_by_role("button", name="Dismiss")
-        if dismiss_btn.is_visible():
-            dismiss_btn.click()
+            # 2. 쿠키 안내 팝업이 뜨면 닫기
+            dismiss_btn = page.get_by_role("button", name="Dismiss")
+            if dismiss_btn.is_visible():
+                dismiss_btn.click()
 
-        # 4. 로그인 버튼을 누르고 Player ID를 입력합니다.
-        page.get_by_role("button", name="Log in").first.click()
-        page.locator("input").first.fill(PLAYER_ID)
-        page.get_by_role("button", name="Log in").last.click()
-        page.wait_for_timeout(3000)  # 로그인 처리까지 3초 대기
+            # 3. 상단 'Log in' 버튼을 눌러 로그인 팝업 열기
+            page.get_by_role("button", name="Log in").first.click()
 
-        # 5. 'Daily Free Echo Shards (100)' 카드 근처의 'Get free' 버튼을 누릅니다.
-        free_btn = page.get_by_role("button", name="Get free").first
-        free_btn.scroll_into_view_if_needed()
-        free_btn.click()
-        page.wait_for_timeout(2000)
+            # 4. 로그인 팝업(.user-id-modal) 안의 입력창에 Player ID 입력 후 로그인
+            modal = page.locator(".user-id-modal")
+            modal.wait_for(state="visible", timeout=10000)
+            modal.locator("input").first.fill(PLAYER_ID)
+            modal.get_by_role("button", name="Log in").click()
 
-        # 6. 장바구니(Cart)로 이동해 최종 수령/결제 버튼이 있으면 누릅니다.
-        cart_btn = page.get_by_role("button", name="Cart")
-        if cart_btn.is_visible():
-            cart_btn.click()
+            # 5. 로그인 팝업이 닫힐 때까지 대기
+            modal.wait_for(state="hidden", timeout=15000)
             page.wait_for_timeout(2000)
 
-        # 7. 잘 실행되었는지 눈으로 확인할 수 있도록 스크린샷을 남깁니다.
-        page.screenshot(path="result.png", full_page=True)
-        browser.close()
+            # 6. 무료 아이템(echo_shard_pack_free) 버튼 클릭
+            free_btn = page.locator('[data-sku="echo_shard_pack_free"]').first
+            free_btn.scroll_into_view_if_needed()
+            free_btn.click()
+            page.wait_for_timeout(3000)
+
+            # 7. 장바구니(Cart) 버튼이 있으면 열어보기
+            cart_btn = page.get_by_role("button", name="Cart")
+            if cart_btn.is_visible():
+                cart_btn.click()
+                page.wait_for_timeout(2000)
+
+        finally:
+            # 오류가 나든 성공하든 마지막 화면을 무조건 스크린샷으로 저장
+            page.screenshot(path="result.png", full_page=True)
+            browser.close()
 
 if __name__ == "__main__":
     run()
