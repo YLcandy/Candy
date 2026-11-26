@@ -20,24 +20,28 @@ def run():
                 dismiss_btn.click()
                 page.wait_for_timeout(500)
 
-            # 3. 화면 가운데 'Enter your player id...' 입력창에 한 글자씩 타이핑
-            inp = page.locator("input:visible").first
+            # 3. 'Enter your player id...' 입력창을 정확히 찾아서 타이핑
+            inp = page.get_by_placeholder("Enter your player id...")
             inp.click()
             inp.press_sequentially(PLAYER_ID, delay=50)
             print("입력된 ID 글자 수:", len(inp.input_value()))
             page.wait_for_timeout(500)
 
-            # 4. 입력창 바로 아래의 'Log in' 버튼 클릭
-            page.locator("button:has-text('Log in'):visible").last.click()
-            page.wait_for_timeout(4000)  # 로그인 완료 대기
+            # 4. 입력창 바로 아래에 있는 'Log in' 버튼만 정확히 클릭
+            login_box = inp.locator("xpath=ancestor::*[.//button[contains(., 'Log in')]][1]")
+            login_box.get_by_role("button", name="Log in").click()
+            page.wait_for_timeout(4000)
 
-            # 5. 무료 아이템(echo_shard_pack_free) 버튼 클릭
+            # 5. 로그인 후 화면 상태 확인용 로그
+            print("로그인 후 입력창 남아있는지:", inp.is_visible())
+
+            # 6. 무료 아이템(echo_shard_pack_free) 버튼 클릭
             free_btn = page.locator('[data-sku="echo_shard_pack_free"]').first
             free_btn.scroll_into_view_if_needed()
             free_btn.click()
             page.wait_for_timeout(3000)
 
-            # 6. 장바구니(Cart) 버튼이 있으면 열어보기
+            # 7. 장바구니(Cart) 버튼이 있으면 열어보기
             cart_btn = page.locator("button:has-text('Cart'):visible").first
             if cart_btn.is_visible():
                 cart_btn.click()
