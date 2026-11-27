@@ -55,6 +55,8 @@ def claim_for_player(browser, idx, player_id, memo):
     page = context.new_page()
     screenshot_path = f"result_{idx}.png"
     logs = []
+    claimed_count = 0
+    already_count = 0
     has_error = False
 
     try:
@@ -94,6 +96,7 @@ def claim_for_player(browser, idx, player_id, memo):
                 skus.append(sku)
 
         if not skus:
+            has_error = True
             logs.append("무료 아이템을 찾지 못했습니다.")
 
         # 7. 찾은 무료 아이템을 하나씩 순서대로 수령
@@ -106,6 +109,7 @@ def claim_for_player(browser, idx, player_id, memo):
                 claimed_modal = page.locator('[data-testid="claimed-item-modal"]')
                 try:
                     claimed_modal.wait_for(state="visible", timeout=10000)
+                    claimed_count += 1
                     logs.append(f"✅ `{sku}` 수령 완료!")
                     back_btn = claimed_modal.get_by_role("button", name="Back to store")
                     if back_btn.is_visible():
@@ -113,8 +117,10 @@ def claim_for_player(browser, idx, player_id, memo):
                         claimed_modal.wait_for(state="hidden", timeout=10000)
                     page.wait_for_timeout(1000)
                 except Exception:
+                    has_error = True
                     logs.append(f"⚠️ `{sku}` 클릭 후 완료 팝업 확인 필요")
             else:
+                already_count += 1
                 logs.append(f"⏭️ `{sku}` 이미 수령됨 ({btn.inner_text()})")
 
     except Exception as e:
@@ -128,7 +134,13 @@ def claim_for_player(browser, idx, player_id, memo):
         print(summary)
         send_discord(summary, screenshot_path)
 
-    return has_error
+    if has_error:
+        return "failed"
+    if claimed_count > 0:
+        return "claimed"
+    if already_count > 0:
+        return "already"
+    return "failed"
 
 def run():
     players = load_players()
@@ -136,17 +148,33 @@ def run():
         raise ValueError("players.txt와 PLAYER_ID Secret이 모두 비어 있습니다!")
 
     print(f"총 {len(players)}개의 계정을 처리합니다.")
-    error_count = 0
+    claimed_list = []
+    already_list = []
+    failed_list = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         for idx, (pid, memo) in enumerate(players, start=1):
-            if claim_for_player(browser, idx, pid, memo):
-                error_count += 1
+            display_name = memo if memo else f"{idx}번 계정"
+            status = claim_for_player(browser, idx, pid, memo)
+            if status == "claimed":
+                claimed_list.append(display_name)
+            elif status == "already":
+                already_list.append(display_name)
+            else:
+                failed_list.append(display_name)
         browser.close()
 
-    # 모든 계정 처리가 끝난 후 최종 완료 알림 전송
-    final_msg = f"🎉 **모든 계정의 무료 아이템 수령이 끝났습니다!** (총 {len(players)}개 계정 처리 · 오류 {error_count}건)"
+    claimed_text = ", ".join(claimed_list) if claimed_list else "없음"
+    already_text = ", ".join(already_list) if already_list else "없음"
+    failed_text = ", ".join(failed_list) if failed_list else "없음"
+
+    final_msg = (
+        f"🎉 **모든 계정의 무료 아이템 수령이 끝났습니다!** (총 {len(players)}개 계정)\n"
+        f"✅ **받은 계정 ({len(claimed_list)}):** {claimed_text}\n"
+        f"⏭️ **이미 수령됨 ({len(already_list)}):** {already_text}\n"
+        f"❌ **못 받은 계정 ({len(failed_list)}):** {failed_text}"
+    )
     print(final_msg)
     send_discord(final_msg)
 
