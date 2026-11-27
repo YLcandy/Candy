@@ -132,7 +132,7 @@ def claim_for_player(browser, idx, player_id, memo):
         context.close()
         summary = f"**[{label}]**\n" + "\n".join(logs)
         print(summary)
-        send_discord(summary, screenshot_path)
+        send_discord(summary)
 
     if has_error:
         return "failed"
